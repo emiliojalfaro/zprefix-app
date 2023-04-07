@@ -121,10 +121,6 @@ app.post('/Login', async (req, res) => {
   }
 })
 
-app.get("/authUsers", authenticateToken, (req, res) => {
-  getUsers().then((data) => res.json(data));
-});
-
 app.post('/CreateAccount', async (req, res) => {
   const { body } = req;
   const hashedPass = await passHasher(body.password)
@@ -157,26 +153,22 @@ app.get('/items', async (req, res) => {
 });
 
 app.get('/userItems/:username', async (req, res) => {
-  console.log(req.headers);
   try {
-    const userId = req.params.id;
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, async (err, decodedToken) => {
-      if (err) {
-        console.error(err);
-        res.status(401).json({ message: 'Unauthorized' });
-      } else {
-        const items = await getItemsbyUser(decodedToken.id);
-        res.status(200).json(items);
-      }
-    });
+    const username = req.params.username;
+    const user = await getUser(username);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+    } else {
+      const items = await getItemsbyUser(user[0].id);
+      res.status(200).json(items);
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+
 
 
 app.get('/users/:id', async (req, res) => {
@@ -215,7 +207,7 @@ app.post('/items', async (req, res) => {
   try {
     let userID = await getUserID(body.username)
     let newItem = await knex('items')
-      .insert({user_id:`${userID}`, item_name: `${body.itemname}`, description: `${body.description}`, quantity: `${quantity}`}, 'id')
+      .insert({user_id:`${userID}`, item_name: `${body.item_name}`, description: `${body.description}`, quantity: `${quantity}`}, 'id')
       .then(id => {
         res.status(201).json('Item creation successful.')
       })

@@ -9,7 +9,7 @@ const getItems = () => {
 }
 
 const getItemsbyUser = async (userId) => {
-  const items = await Item.find({ user_id: userId });
+  const items = await knex.select().from('items').where({ user_id: userId });
   return items;
 }
 

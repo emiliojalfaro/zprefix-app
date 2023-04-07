@@ -34,7 +34,7 @@ app.get('/users', async (req, res) => {
   }
 });
 
-app.post('/Login', async (req, res) => {
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await knex('users')
     .where('username', username)
@@ -91,6 +91,19 @@ app.get('/items', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.get('/items/user', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    const items = await getItems(user_id);
+    res.status(200).json(items);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
 
 app.get('/users/:id', async (req, res) => {
   try {

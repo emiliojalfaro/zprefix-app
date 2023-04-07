@@ -1,6 +1,11 @@
 const knex = require("./dbConnection");
 
 
+
+const getUsers = () => {
+  return knex.select().from("users");
+}
+
 const getItems = () => {
   return knex.select().from("items");
 }
@@ -39,12 +44,13 @@ const updateItem = async (id, user_id, item_name, description, quantity) => {
   return updatedItem;
 };
 
+
 const deleteItem = async (id) => {
   const result = await knex('items').where({ id: id}).del();
   return result > 0 ? true: false;
 }
 
-const getUsers = () => {
+const getUsersLogin = () => {
   return knex.select("*").from("users");
 };
 
@@ -57,5 +63,5 @@ module.exports = {
   createUser,
   updateItem, 
   deleteItem, 
-  getUsers,
+  getUsersLogin,
 };

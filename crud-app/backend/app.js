@@ -2,77 +2,18 @@ const express = require('express');
 const knexConfig = require('./knexfile')[process.env.NODE_ENV || 'development'];
 const knex = require('knex')(knexConfig);
 const cors = require('cors');
-const bcrypt = require('bcrypt');
-const { getUsers, getUsersById, createUser, deleteItem, getUsers } = require('./db/controllers');
+const { getUsers, getUsersById, createUser, deleteItem, getUsersLogin } = require('./db/controllers');
 const { getItems, getItemById, createItem, updateItem } = require('./db/controllers');
 const app = express();
 const port = process.env.PORT || 8081;
-
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const hasher = (password) => {
-  const salty = bcrypt.genSaltSync(10);
-  const hashes = bcrypt.hashSync(password, salt)
-  return hashes
-}
-
-const hashCheck = async (inputPassword, storedHash) => {
-  try {
-    let matches = bcrypt.compareSync(inputPassword, storedHash)
-    return matches
-  }
-  catch(err){
-    throw "The wrong username or password was provided"
-  }
-}
-
-const getPass = async (username) => {
-  let hashes 
-  try {
-    hashes = await knex('users')
-    .select('password').where('username', '=', `${username}`)
-    .then(array => array[0].password)
-    .catch(err => {
-      throw 'Password not found'
-    })
-  }
-  catch(err) {
-    return err
-  }
-  return hashes
-}
-
-const getUserID = async (username) => {
-  try{
-    let userID = await knex('users')
-    .select('id')
-    .where('username', '=', `${username}`)
-    .then(rows => rows[0].id)
-    return userID
-  }
-  catch(err){
-    throw err
-  }
-}
-
-const getUsername = (userID) => {
-  let userName = knex('users')
-  .select('username')
-  .where('id', '=', `${userID}`)
-  .then(rows => rows[0].username)
-  return userName
-}
-
 app.post("/login", async (req, res) => {
-  const results = await getUsers(req.body.username.toLowerCase());
+  const results = await getUsersLogin(req.body.username.toLowerCase());
   const userData = results[0];
   if (userData == null) {
     return res.status(400).json("Invalid username or password");

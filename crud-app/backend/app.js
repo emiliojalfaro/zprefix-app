@@ -4,7 +4,8 @@ const knex = require('knex')(knexConfig);
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken')
-const { getUsers, getUsersById,  deleteItem, postUser } = require('./db/controllers');
+const jwtSecret = process.env.JWT_SECRET || 'secret';
+const { getUsers, getUsersById,  deleteItem, getItemsbyUser } = require('./db/controllers');
 const { getItems, getItemById, createItem, updateItem } = require('./db/controllers');
 const { authenticateToken, comparePasswords, } = require("./utilities/authorization");
 const app = express();
@@ -92,16 +93,28 @@ app.get('/items', async (req, res) => {
   }
 });
 
-app.get('/items/user', async (req, res) => {
+app.get('/users/:id/items', async (req, res) => {
+  console.log(req.headers);
   try {
-    const { user_id } = req.query;
-    const items = await getItems(user_id);
-    res.status(200).json(items);
+    const userId = req.params.id;
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, async (err, decodedToken) => {
+      if (err) {
+        console.error(err);
+        res.status(401).json({ message: 'Unauthorized' });
+      } else {
+        const items = await getItemsbyUser(decodedToken.id);
+        res.status(200).json(items);
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 
 
 
@@ -180,6 +193,67 @@ app.delete('/items/:id', async (req, res) => {
   }
 });
 
+const checkItemOwnership = async (req, res, next) => {
+  try {
+    const item = await Item.findByPk(req.params.itemId);
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    if (item.userId !== req.user.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    next();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+app.get("/users/:userId/items", authenticateToken, async (req, res) => {
+  try {
+    const items = await Item.findAll({ where: { userId: req.params.userId } });
+    res.json(items);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/users/:userId/items", authenticateToken, async (req, res) => {
+  try {
+    const newItem = await Item.create({ ...req.body, userId: req.params.userId });
+    res.json(newItem);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.put("/items/:itemId", authenticateToken, checkItemOwnership, async (req, res) => {
+  try {
+    const [numUpdated, updatedItems] = await Item.update(req.body, { where: { id: req.params.itemId }, returning: true });
+    if (numUpdated === 0) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    res.json(updatedItems[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.delete("/items/:itemId", authenticateToken, checkItemOwnership, async (req, res) => {
+  try {
+    const numDeleted = await Item.destroy({ where: { id: req.params.itemId } });
+    if (numDeleted === 0) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    res.json({ message: "Item deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 // Start the server

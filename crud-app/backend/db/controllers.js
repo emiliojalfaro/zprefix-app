@@ -10,6 +10,15 @@ const getItems = () => {
   return knex.select().from("items");
 }
 
+async function getItemsbyUser(user_id) {
+  if (user_id) {
+    return knex('items').where({ user_id });
+  } else {
+    return knex('items');
+  }
+}
+
+
 const getUsersById = (id) => {
   return knex.select().from('users').where({ id: id }).first();
 }
@@ -81,4 +90,5 @@ module.exports = {
   getUsersLogin,
   getUsersInfo,
   postUser,
+  getItemsbyUser,
 };

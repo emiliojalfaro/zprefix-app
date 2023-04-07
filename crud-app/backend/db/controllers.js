@@ -19,7 +19,18 @@ const getItemById = (id) => {
 }
 
 const createUser = async (first_name, last_name, username, password) => {
-  return knex('users').insert({ first_name, last_name, username, password });
+  const newUser = {
+    first_name, 
+    last_name, 
+    username,
+    password,
+  };
+  const result = await knex('users').insert(newUser);
+  return result[0];
+};
+
+const postUser = (user) => {
+  return knex("customers").insert(user);
 };
 
 const createItem = async (user_id, item_name, description, quantity) => {
@@ -54,6 +65,10 @@ const getUsersLogin = () => {
   return knex.select("*").from("users");
 };
 
+const getUsersInfo = () => {
+  return knex.select("*").from("users");
+};
+
 module.exports = {
   getUsers,
   getItems,
@@ -64,4 +79,6 @@ module.exports = {
   updateItem, 
   deleteItem, 
   getUsersLogin,
+  getUsersInfo,
+  postUser,
 };

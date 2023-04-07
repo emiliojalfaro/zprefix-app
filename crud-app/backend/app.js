@@ -2,43 +2,27 @@ const express = require('express');
 const knexConfig = require('./knexfile')[process.env.NODE_ENV || 'development'];
 const knex = require('knex')(knexConfig);
 const cors = require('cors');
-const { getUsers, getUsersById, createUser, deleteItem, getUsersLogin } = require('./db/controllers');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken')
+const { getUsers, getUsersById,  deleteItem, postUser } = require('./db/controllers');
 const { getItems, getItemById, createItem, updateItem } = require('./db/controllers');
+const { authenticateToken, comparePasswords, } = require("./utilities/authorization");
 const app = express();
 const port = process.env.PORT || 8081;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.post("/login", async (req, res) => {
-  const results = await getUsersLogin(req.body.username.toLowerCase());
-  const userData = results[0];
-  if (userData == null) {
-    return res.status(400).json("Invalid username or password");
-  }
-
-  comparePasswords(req.body.password, userData.password).then((result) => {
-    if (result) {
-      const user = { name: userData.username };
-
-      //Generates a user session ID after successful authentication.
-      const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET);
-      res.json({ accessToken: accessToken });
-    } else {
-      console.log("passwords didnt match hash");
-      return res.status(400).send();
-    }
-  });
-});
-
-
-// Routes
-
-app.get('/', (req, res) => {
-  res.status(200).send('API is up and running.');
-});
+const passHasher = (password) => {
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(password, salt)
+  return hash
+}
 
 app.get('/users', async (req, res) => {
   try {
@@ -48,6 +32,54 @@ app.get('/users', async (req, res) => {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
+});
+
+app.post('/Login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = await knex('users')
+    .where('username', username)
+    .first();
+  if (user && await bcrypt.compare(password, user.password)) {
+    const accessToken = jwt.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET);
+    res.json({ accessToken });
+  } else {
+    res.status(401).json({ message: 'Invalid login' });
+  }
+});
+
+
+app.get("/usersPublic", authenticateToken, (req, res) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    getUserPublicInfo(user.name).then((data) => res.json(data));
+  });
+});
+
+app.get("/authUsers", authenticateToken, (req, res) => {
+  getUsers().then((data) => res.json(data));
+});
+
+app.post('/CreateAccount', async (req, res) => {
+  const { body } = req;
+  const hashedPass = await passHasher(body.password)
+  try {
+    let newUser = await knex('users')
+    .insert({first_name: `${body.firstName}`, last_name: `${body.lastName}`, username: `${body.username}`, password: `${hashedPass}`}, 'id')
+    .then(id => {
+        res.status(201).json('User creation successful. Please log in.')
+      })
+  }
+  catch(err){
+    res.status(400).json('There was an error processing your request.')
+  }
+})
+
+// Routes
+
+app.get('/', (req, res) => {
+  res.status(200).send('API is up and running.');
 });
 
 app.get('/items', async (req, res) => {
@@ -84,17 +116,6 @@ app.get('/items/:id', async (req, res) => {
     } else {
       res.status(404).json({ message: 'Item not found' });
     }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.post('/users', async (req, res) => {
-  try {
-    const { name, email } = req.body;
-    const newUser = await createUser(name, email);
-    res.status(201).json(newUser);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
@@ -152,5 +173,6 @@ app.delete('/items/:id', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
+
 
 module.exports = app;

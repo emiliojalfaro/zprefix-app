@@ -1,7 +1,5 @@
 const knex = require("./dbConnection");
 
-
-
 const getUsers = () => {
   return knex.select().from("users");
 }
@@ -10,14 +8,10 @@ const getItems = () => {
   return knex.select().from("items");
 }
 
-async function getItemsbyUser(user_id) {
-  if (user_id) {
-    return knex('items').where({ user_id });
-  } else {
-    return knex('items');
-  }
+const getItemsbyUser = async (userId) => {
+  const items = await Item.find({ user_id: userId });
+  return items;
 }
-
 
 const getUsersById = (id) => {
   return knex.select().from('users').where({ id: id }).first();
@@ -78,6 +72,10 @@ const getUsersInfo = () => {
   return knex.select("*").from("users");
 };
 
+const getUser = (username) => {
+  return knex.select("*").from("users").where({ username: username });
+};
+
 module.exports = {
   getUsers,
   getItems,
@@ -91,4 +89,5 @@ module.exports = {
   getUsersInfo,
   postUser,
   getItemsbyUser,
+  getUser,
 };

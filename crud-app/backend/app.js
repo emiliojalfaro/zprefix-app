@@ -1,27 +1,91 @@
 const express = require('express');
 const knexConfig = require('./knexfile')[process.env.NODE_ENV || 'development'];
+const env = process.env.NODE_ENV || 'development'
 const knex = require('knex')(knexConfig);
+const morgan = require("morgan");
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken')
-const jwtSecret = process.env.JWT_SECRET || 'secret';
+const jwt = require('jsonwebtoken');
+const cookieSession = require('cookie-session');
+const cookieParser = require('cookie-parser');
 const { getUsers, getUsersById,  deleteItem, getItemsbyUser } = require('./db/controllers');
-const { getItems, getItemById, createItem, updateItem } = require('./db/controllers');
+const { getItems, getItemById, createItem, updateItem, getUser } = require('./db/controllers');
 const { authenticateToken, comparePasswords, } = require("./utilities/authorization");
 const app = express();
 const port = process.env.PORT || 8081;
 
 // Middleware
+app.use(morgan("tiny"));
 app.use(cors({
-  origin: 'http://localhost:3000',
-  credentials: true,
+  origin: true,
+  credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser())
+app.use(cookieSession({
+  name: 'user_session',
+  httpOnly: true,
+  sameSite: 'strict',
+  secret: 'somethingsecretiwouldthink'
+}))
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
 
 const passHasher = (password) => {
   const salt = bcrypt.genSaltSync(10);
   const hash = bcrypt.hashSync(password, salt)
+  return hash
+}
+
+const hashCompare = async (inputPassword, storedHash) => {
+  try{
+    let doesMatch = bcrypt.compareSync(inputPassword, storedHash)
+    return doesMatch
+  }
+  catch(err){
+    throw 'There was a problem with your username or password.'
+  }
+}
+
+const getUserID = async (username) => {
+  try{
+    let userID = await knex('users')
+    .select('id')
+    .where('username', '=', `${username}`)
+    .then(rows => {
+      if (rows.length === 0) {
+        throw 'User not found.';
+      }
+      return rows[0].id;
+    });
+    return userID
+  }
+  catch(err){
+    throw err
+  }
+}
+
+const retrievePass = async (username) => {
+  let hash
+  try {
+    hash = await knex('users')
+    .select('password').where('username', '=', `${username}`)
+    .then(array => array[0].password)
+    .catch(err => {
+      // console.log(err)
+      throw 'No password found.'
+    })
+  }
+  catch(err) {
+    // console.log(err)
+    return err
+  }
   return hash
 }
 
@@ -35,28 +99,27 @@ app.get('/users', async (req, res) => {
   }
 });
 
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await knex('users')
-    .where('username', username)
-    .first();
-  if (user && await bcrypt.compare(password, user.password)) {
-    const accessToken = jwt.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET);
-    res.json({ accessToken });
-  } else {
-    res.status(401).json({ message: 'Invalid login' });
+app.get('/Login', (req, res) => {
+  res.status(200).send('This is the login page.');
+});
+
+app.post('/Login', async (req, res) => {
+  const { body } = req;
+  try {
+    let storedPass = await retrievePass(body.username);
+    let doesMatch = await hashCompare(body.password, storedPass)
+    if(doesMatch){
+      req.session.username = req.body.username;
+      res.status(202).json('Authenticated')
+    }else{
+      res.status(404).json('There was a problem with your username or password.')
+    }
   }
-});
-
-
-app.get("/usersPublic", authenticateToken, (req, res) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403);
-    getUserPublicInfo(user.name).then((data) => res.json(data));
-  });
-});
+  catch(err){
+    // console.log(err);
+    res.json(err)
+  }
+})
 
 app.get("/authUsers", authenticateToken, (req, res) => {
   getUsers().then((data) => res.json(data));
@@ -93,7 +156,7 @@ app.get('/items', async (req, res) => {
   }
 });
 
-app.get('/users/:id/items', async (req, res) => {
+app.get('/userItems/:username', async (req, res) => {
   console.log(req.headers);
   try {
     const userId = req.params.id;
@@ -114,8 +177,6 @@ app.get('/users/:id/items', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
-
 
 
 app.get('/users/:id', async (req, res) => {
@@ -149,22 +210,21 @@ app.get('/items/:id', async (req, res) => {
 });
 
 app.post('/items', async (req, res) => {
-  const { user_id, item_name, description, quantity } = req.body;
+  const { body } = req;
+  const quantity = parseInt(body.quantity)
   try {
-    const newItem = await knex('items').insert({
-      user_id,
-      item_name,
-      description,
-      quantity
-    })
-    await createItem(user_id, item_name, description, quantity);
-    res.status(201).json(newItem);
-  } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
+    let userID = await getUserID(body.username)
+    let newItem = await knex('items')
+      .insert({user_id:`${userID}`, item_name: `${body.itemname}`, description: `${body.description}`, quantity: `${quantity}`}, 'id')
+      .then(id => {
+        res.status(201).json('Item creation successful.')
+      })
   }
-});
-
+  catch(err){
+    console.log(err)
+    res.status(400).json(err)
+  }
+})
 
 app.patch('/items/:id', async (req, res) => {
   const { user_id, item_name, description, quantity } = req.body;
@@ -190,68 +250,6 @@ app.delete('/items/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-const checkItemOwnership = async (req, res, next) => {
-  try {
-    const item = await Item.findByPk(req.params.itemId);
-    if (!item) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-    if (item.userId !== req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    next();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-app.get("/users/:userId/items", authenticateToken, async (req, res) => {
-  try {
-    const items = await Item.findAll({ where: { userId: req.params.userId } });
-    res.json(items);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.post("/users/:userId/items", authenticateToken, async (req, res) => {
-  try {
-    const newItem = await Item.create({ ...req.body, userId: req.params.userId });
-    res.json(newItem);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.put("/items/:itemId", authenticateToken, checkItemOwnership, async (req, res) => {
-  try {
-    const [numUpdated, updatedItems] = await Item.update(req.body, { where: { id: req.params.itemId }, returning: true });
-    if (numUpdated === 0) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-    res.json(updatedItems[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.delete("/items/:itemId", authenticateToken, checkItemOwnership, async (req, res) => {
-  try {
-    const numDeleted = await Item.destroy({ where: { id: req.params.itemId } });
-    if (numDeleted === 0) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-    res.json({ message: "Item deleted" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
   }
 });
 
